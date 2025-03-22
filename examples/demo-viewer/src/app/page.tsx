@@ -1,8 +1,7 @@
 "use client";
 
-import React from 'react';
+import React from "react";
 import { ViewerLayout } from "@/components/layout/viewer-layout";
-import { LLMSelector } from "@/components/llm-selector/llm-selector";
 import { DemoList } from "@/components/demo-list/demo-list";
 import { DemoPreview } from "@/components/demo-viewer/demo-preview";
 import { FileTree } from "@/components/file-tree/file-tree";
@@ -18,9 +17,8 @@ import { Eye, Code, Book } from "lucide-react";
 import { CodeEditor } from "@/components/code-editor/code-editor";
 import ReactMarkdown from "react-markdown";
 import { MarkdownComponents } from "@/components/ui/markdown-components";
-import { MDXContent } from '@/components/ui/mdx-components';
-import { MDXRenderer, SafeComponent } from '@/utils/mdx-utils';
-import { join } from 'path';
+import { MDXContent } from "@/components/ui/mdx-components";
+import { MDXRenderer, SafeComponent } from "@/utils/mdx-utils";
 
 export default function Home() {
   const [selectedDemoId, setSelectedDemoId] = useState<string>();
@@ -85,54 +83,25 @@ export default function Home() {
   }, [selectedDemo]);
 
   // Load README content
-  const loadReadmeContent = useCallback(async (demoPath: string) => {
+  const loadReadmeContent = useCallback(async (demoId: string) => {
+    // Process MDX if the file exists
     try {
-      // First try to load README.mdx
-      let response = await fetch('/api/fs/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: join(demoPath, 'README.mdx') }),
+      const mdxResponse = await fetch("/api/mdx/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demoId }),
       });
 
-      if (!response.ok) {
-        // Fallback to README.md if README.mdx doesn't exist
-        response = await fetch('/api/fs/read', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: join(demoPath, 'README.md') }),
-        });
-      }
-
-      if (response.ok) {
-        const { content } = await response.json();
+      if (mdxResponse.ok) {
+        const { compiled, content } = await mdxResponse.json();
+        setCompiledMDX(compiled);
         setReadmeContent(content);
-
-        // Process MDX if the file exists
-        try {
-          const mdxResponse = await fetch('/api/mdx/process', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: join(demoPath, 'README.mdx') }),
-          });
-
-          if (mdxResponse.ok) {
-            const { compiled } = await mdxResponse.json();
-            setCompiledMDX(compiled);
-          } else {
-            setCompiledMDX(null);
-          }
-        } catch (mdxError) {
-          console.error('Error processing MDX:', mdxError);
-          setCompiledMDX(null);
-        }
       } else {
-        // If neither README.mdx nor README.md exists, clear the content
-        setReadmeContent(null);
         setCompiledMDX(null);
+        setReadmeContent(null);
       }
-    } catch (err) {
-      console.error('Error loading README:', err);
-      setReadmeContent(null);
+    } catch (mdxError) {
+      console.error("Error processing MDX:", mdxError);
       setCompiledMDX(null);
     }
   }, []);
@@ -141,9 +110,9 @@ export default function Home() {
   useEffect(() => {
     if (selectedDemo?.path) {
       handleNavigate(selectedDemo.path);
-      loadReadmeContent(selectedDemo.path);
+      loadReadmeContent(selectedDemo.id);
     }
-  }, [selectedDemo?.path, handleNavigate, loadReadmeContent]);
+  }, [selectedDemo?.path, handleNavigate, loadReadmeContent, selectedDemo?.id]);
 
   // Find agent.py file when switching to code tab
   const handleTabChange = (value: string) => {
@@ -264,12 +233,18 @@ export default function Home() {
                     {compiledMDX ? (
                       <MDXContent>
                         <SafeComponent
-                          component={() => <MDXRenderer content={readmeContent} demoId={selectedDemo?.id} />}
+                          component={() => (
+                            <MDXRenderer
+                              content={readmeContent}
+                              demoId={selectedDemo?.id}
+                            />
+                          )}
                           fallback={
                             <div className="p-4 border rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
-                              Could not render MDX content. Displaying markdown instead.
+                              Could not render MDX content. Displaying markdown
+                              instead.
                               <ReactMarkdown components={MarkdownComponents}>
-                                {readmeContent || ''}
+                                {readmeContent || ""}
                               </ReactMarkdown>
                             </div>
                           }
@@ -319,6 +294,10 @@ export default function Home() {
                             : selectedFilePath?.endsWith(".js") ||
                               selectedFilePath?.endsWith(".jsx")
                             ? "javascript"
+                            : selectedFilePath?.endsWith(".yaml")
+                            ? "yaml"
+                            : selectedFilePath?.endsWith(".toml")
+                            ? "toml"
                             : "plaintext",
                         }}
                       />
